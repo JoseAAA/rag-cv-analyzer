@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+venv/
+env/
+
+# Vector Database
+# Ignoramos la base de datos vectorial ya que se puede regenerar
+vector_db*/
+
+# Secrets management
+# Ignorar el archivo de entorno local que contendrá las API keys
+.env
+.secrets
+secrets.toml
+.streamlit/secrets.toml
+
+# OS specific
+.DS_Store
+
+# Datos
+data/

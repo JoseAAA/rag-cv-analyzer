@@ -9,11 +9,10 @@ import ntpath
 from typing import Tuple, List, Optional
 
 import streamlit as st
+from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStoreRetriever
-
-# Importaciones actualizadas para LangChain v0.2+
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -24,55 +23,53 @@ from .config import (
     RETRIEVER_K
 )
 
+# Cargar variables de entorno desde el archivo .env
+load_dotenv()
+
 @st.cache_resource
 def load_embedding_model() -> HuggingFaceEmbeddings:
-    """Carga y cachea el modelo de embeddings de HuggingFace.
-    
-    Esta función se cachea para asegurar que el modelo se cargue en memoria
-    una sola vez durante la vida de la aplicación.
-    
-    Returns:
-        Una instancia del modelo de embeddings.
-    """
+    """Carga y cachea el modelo de embeddings de HuggingFace."""
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
 @st.cache_resource
 def load_llm_and_retriever() -> Tuple[Optional[ChatGoogleGenerativeAI], Optional[VectorStoreRetriever]]:
     """Carga y cachea el LLM de Gemini y el retriever de ChromaDB.
 
-    Utiliza el modelo de embeddings cacheado para inicializar el retriever.
-
     Returns:
-        Una tupla conteniendo el objeto LLM y el objeto retriever. Si algo
-        falla (DB no encontrada, API key ausente), devuelve (None, None).
+        Una tupla (llm, retriever). Devuelve (None, None) si la DB está vacía
+        o falta la API key.
     """
-    persist_directory = str(DB_DIRECTORY)
-    if not os.path.isdir(persist_directory) or not os.listdir(persist_directory):
+    if not os.path.isdir(DB_DIRECTORY) or not os.listdir(DB_DIRECTORY):
+        return None, None
+
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    if not google_api_key:
+        st.error(
+            "API Key de Google no encontrada. Asegúrate de crear un archivo .env "
+            "y añadir GOOGLE_API_KEY='tu-clave-aqui'"
+        )
         return None, None
 
     try:
-        google_api_key = st.secrets["GOOGLE_API_KEY"]
-    except (KeyError, FileNotFoundError):
-        st.error("API Key de Google no encontrada. Añádela a .streamlit/secrets.toml")
+        embeddings = load_embedding_model()
+        
+        vector_store = Chroma(
+            persist_directory=str(DB_DIRECTORY), 
+            embedding_function=embeddings
+        )
+        
+        retriever = vector_store.as_retriever(search_kwargs={'k': RETRIEVER_K})
+        
+        llm = ChatGoogleGenerativeAI(
+            model=LLM_MODEL_NAME,
+            google_api_key=google_api_key,
+            temperature=0.1
+        )
+        
+        return llm, retriever
+    except Exception as e:
+        st.error(f"Error al inicializar los servicios de IA: {e}")
         return None, None
-
-    # Usa la función cacheada para obtener el modelo de embeddings
-    embeddings = load_embedding_model()
-    
-    vector_store = Chroma(
-        persist_directory=persist_directory, 
-        embedding_function=embeddings
-    )
-    
-    retriever = vector_store.as_retriever(search_kwargs={'k': RETRIEVER_K})
-    
-    llm = ChatGoogleGenerativeAI(
-        model=LLM_MODEL_NAME,
-        google_api_key=google_api_key,
-        temperature=0.1
-    )
-    
-    return llm, retriever
 
 def format_docs(docs: List[Document]) -> str:
     """Formatea los documentos recuperados para ser insertados en el prompt.

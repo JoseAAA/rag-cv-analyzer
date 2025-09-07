@@ -24,3 +24,6 @@ secrets.toml
 
 # Datos
 data/
+
+# Gemini
+GEMINI.md

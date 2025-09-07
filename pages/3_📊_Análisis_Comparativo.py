@@ -11,28 +11,10 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_chroma import Chroma
 
-from src.rag_pipeline import load_llm_and_retriever, format_docs, load_embedding_model
-from src.vector_store import get_db_stats
-from src.config import DB_DIRECTORY, RETRIEVER_K
-
-# --- Plantilla de Prompt Específica del Módulo ---
-
-COMPARISON_PROMPT_TEMPLATE = """
-Actúas como un analista de talento experto. Tu tarea es crear una tabla comparativa en formato Markdown y un resumen final basados en el contexto y el criterio de comparación proporcionados.
-
-**Contexto de CVs Proporcionado:**
-{context}
-
-**Criterio de Comparación:**
-{question}
-
-**Instrucciones de Salida:**
-1.  **Tabla Comparativa:** Genera una tabla en Markdown que compare a los candidatos. Usa los nombres de archivo de los CVs como cabeceras de las columnas.
-2.  **Análisis y Resumen:** Después de la tabla, escribe un párrafo titulado "**Análisis y Resumen**" donde expliques las fortalezas y debilidades de cada candidato respecto al criterio y ofrezcas una recomendación final.
-3.  Si el contexto no es suficiente para responder, indícalo claramente.
-
-**Respuesta en Markdown:**
-"""
+from src.rag_pipeline import load_llm_and_retriever, format_docs
+from src.vector_store import get_db_stats, get_chroma_client
+from src.config import RETRIEVER_K, COMPARISON_PROMPT_TEMPLATE, CHROMA_COLLECTION_NAME
+from src.models import load_embedding_model
 
 st.set_page_config(
     page_title="Análisis Comparativo",
@@ -41,7 +23,7 @@ st.set_page_config(
 )
 
 st.title("📊 Análisis Comparativo de Candidatos")
-st.markdown("Selecciona a los finalistas y compáralos cabeza a cabeza.")
+st.markdown("Selecciona a los finalistas para una comparación detallada de sus perfiles.")
 
 # --- Carga de Datos y UI ---
 
@@ -72,8 +54,8 @@ if len(selected_cvs) >= 2:
     comparison_criterion = st.text_area(
         label="Criterio de Comparación",
         placeholder=(
-            "Ej: Compara su experiencia en el desarrollo de APIs REST con "
-            "Python y FastAPI. ¿Qué bases de datos han utilizado?"
+            "Ej: ¿Quién tiene más años de experiencia en liderazgo de equipos?"
+            " Compara también sus habilidades en Python y SQL."
         )
     )
 
@@ -85,10 +67,11 @@ if len(selected_cvs) >= 2:
             with st.spinner(spinner_text):
                 try:
                     # --- Lógica de Backend para la Comparación ---
-                    embeddings = load_embedding_model()
+                    client = get_chroma_client() # Usa el cliente centralizado
                     vector_store = Chroma(
-                        persist_directory=str(DB_DIRECTORY),
-                        embedding_function=embeddings
+                        client=client,
+                        collection_name=CHROMA_COLLECTION_NAME,
+                        embedding_function=load_embedding_model()
                     )
                     
                     search_kwargs = {

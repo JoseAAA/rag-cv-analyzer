@@ -64,7 +64,7 @@ with col2:
         st.markdown(
             """
             - **Selecciona** a varios finalistas de tu interés.
-            - **Compara** sus perfiles cabeza a cabeza basado en criterios específicos.
+            - Realiza una **comparación** detallada entre finalistas según criterios clave.
             - Genera una **tabla comparativa** para facilitar la decisión final.
             """
         )

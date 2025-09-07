@@ -1,100 +1,197 @@
 """
-Módulo de configuración centralizada para la aplicación.
+Módulo de Configuración Centralizada.
 
-Contiene todas las constantes y parámetros importantes, como rutas de directorios,
-nombres de modelos, y configuraciones para el procesamiento de datos y la pipeline de RAG.
+Este archivo es el \"panel de control\" de la aplicación. Contiene todos los
+parámetros clave para que puedas ajustar el comportamiento del asistente
+de reclutamiento sin necesidad de tocar el código fuente.
 """
 from pathlib import Path
-from typing import Final
+from typing import Final, List
 
-# --- Nombres de Modelos ---
-# Modelo de embeddings de HuggingFace. 
-# "intfloat/multilingual-e5-base" es un modelo de alta calidad que ofrece un gran balance rendimiento/calidad.
-EMBEDDING_MODEL_NAME: Final[str] = "intfloat/multilingual-e5-base"
-
-# --- Parámetros para la Ingesta y el Splitting ---
-CHUNK_SIZE: Final[int] = 1000
-CHUNK_OVERLAP: Final[int] = 100
-
-# --- Rutas Principales ---
+# ==============================================================================
+# SECCIÓN 1: RUTAS Y DIRECTORIOS
+# ==============================================================================
+# Rutas principales. No es necesario modificar esto a menos que se reestructure
+# el proyecto.
 BASE_DIR: Final[Path] = Path(__file__).resolve().parent.parent
 CV_DIRECTORY: Final[Path] = BASE_DIR / "data" / "CVs"
-DB_DIRECTORY: Final[Path] = BASE_DIR / f"vector_db_{EMBEDDING_MODEL_NAME.replace('/', '_')}"
+DB_DIRECTORY_BASE_NAME: Final[str] = "vector_db"
 
-# Modelo de lenguaje de Google GenAI. 
-# "gemini-1.5-flash-latest" es rápido y eficiente en costes.
+
+# ==============================================================================
+# SECCIÓN 2: MODELOS DE INTELIGENCIA ARTIFICIAL
+# ==============================================================================
+
+# --- Modelo de Embeddings (Para \"entender\" el texto de los CVs) ---
+# Modelo recomendado: \"intfloat/multilingual-e5-base\" (multilingüe, buen balance).
+EMBEDDING_MODEL_NAME: Final[str] = "intfloat/multilingual-e5-base"
+
+# --- Modelo de Lenguaje (Para \"generar\" las respuestas) ---
+# Modelo recomendado: \"gemini-1.5-flash-latest\" (rápido y de bajo coste).
 LLM_MODEL_NAME: Final[str] = "gemini-1.5-flash-latest"
 
-# --- Configuración de la Base de Datos Vectorial ---
-# Nombre de la colección en ChromaDB donde se almacenan los embeddings.
-CHROMA_COLLECTION_NAME: Final[str] = "langchain"
+# --- Comportamiento del Modelo de Lenguaje ---
+# La \"temperatura\" controla la creatividad del modelo (rango: 0.0 a 1.0).
+# - Valores bajos (ej. 0.1): producen respuestas más directas y consistentes.
+# - Valores altos (ej. 0.9): producen respuestas más creativas y diversas.
+LLM_TEMPERATURE: Final[float] = 0.1
 
-# --- Parámetros del Retriever ---
-# Número de documentos relevantes a recuperar de la base de datos.
+
+# ==============================================================================
+# SECCIÓN 3: PROCESAMIENTO Y ANÁLISIS DE DOCUMENTOS
+# ==============================================================================
+
+# --- División de Documentos (Chunking) ---
+# Tamaño máximo de cada fragmento de texto para análisis (en caracteres).
+CHUNK_SIZE: Final[int] = 1000
+# Solapamiento entre fragmentos para no perder contexto (en caracteres).
+CHUNK_OVERLAP: Final[int] = 100
+
+# --- Procesamiento de PDFs ---
+# Estrategia de extracción: \"fast\" (rápida) o \"hi_res\" (más precisa, lenta).
+PDF_PROCESSING_STRATEGY: Final[str] = "fast"
+# Idiomas a detectar en los CVs para mejorar la extracción de texto.
+PDF_PROCESSING_LANGUAGES: Final[List[str]] = ["spa", "eng"]
+
+# --- Búsqueda de Información (Retriever) ---
+# Número de fragmentos de CVs que la IA consultará para formular una respuesta.
 RETRIEVER_K: Final[int] = 20
 
-# --- Parámetros de Análisis ---
-# Número máximo de candidatos a mostrar en los resultados finales.
+# --- Ranking de Candidatos ---
+# Número máximo de candidatos a mostrar en la lista de resultados.
 TOP_K_CANDIDATES: Final[int] = 5
 
-# --- Prompt Template ---
-# Plantilla de prompt para el LLM que define el rol, el contexto y el formato de salida.
-PROMPT_TEMPLATE: Final[str] = """
-Actúas como un \"Talent Sourcer\" de élite con IA. Tu objetivo es analizar el 
-contexto de varios CVs para encontrar a los candidatos que mejor se ajusten a la 
-pregunta del reclutador y devolver los resultados en formato JSON.
 
-**Contexto de CVs Proporcionado:**
-El contexto a continuación contiene varios fragmentos de texto, cada uno extraído 
-de un CV diferente. Cada fragmento está claramente delimitado por 
-`--- INICIO DEL FRAGMENTO DEL CV: [nombre_del_archivo.pdf] ---` y 
-`--- FIN DEL FRAGMENTO DEL CV: [nombre_del_archivo.pdf] ---`.
+# ==============================================================================
+# SECCIÓN 4: PLANTILLAS DE PROMPTS (Las instrucciones para la IA)
+# ==============================================================================
+# Modificar estos textos cambiará el rol, formato y estilo de las respuestas
+# de la inteligencia artificial en cada módulo de la aplicación.
 
-**REGLA CRÍTICA:** Basa tu análisis para cada candidato EXCLUSIVAMENTE en los 
-fragmentos que provienen de su propio archivo de CV. NUNCA mezcles información 
-entre diferentes archivos.
+# --- Módulo: Ranking de Candidatos ---
+RANKING_PROMPT_TEMPLATE: Final[str] = """
+### ROL Y OBJETIVO
+Actúas como un "Headhunter" técnico de élite. Tu objetivo es analizar los CVs proporcionados en
+el contexto para encontrar a los candidatos que mejor se ajusten a la pregunta del reclutador y
+devolver una lista de objetos JSON.
 
+### PROCESO
+1.  **Análisis Individual:** Revisa cada CV y extrae la información relevante para la pregunta.
+2.  **Evaluación de Relevancia:** Determina si el perfil del candidato es semánticamente
+relevante para el puesto buscado.
+3.  **Generación de Salida:** Crea la respuesta JSON final, adhiriéndote estrictamente a la
+estructura y al ejemplo.
+
+### CONTEXTO (Fragmentos de CVs)
 {context}
 
-**Pregunta del Reclutador:**
+### PREGUNTA DEL RECLUTADOR
 {question}
 
-**Proceso y Formato de Salida Obligatorio:**
-1.  **Análisis Interno (Paso a Paso):** Para cada candidato:
-    a.  Identifica su puesto de trabajo más relevante (`job_title_found`).
-    b.  **Análisis de Puesto (CRÍTICO):** Compara la `Pregunta del Reclutador` con 
-        la experiencia y el `job_title_found` del candidato. Determina si el rol 
-        del candidato es **semánticamente equivalente** al puesto buscado, aunque 
-        no se llamen igual. Por ejemplo, si se busca un "Científico de Datos", 
-        roles como "Analista de Datos Senior con experiencia en Machine Learning" 
-        o "Ingeniero BI con especialización en modelos predictivos" son 
-        equivalentes. Basado en este análisis, establece el campo booleano 
-        `is_job_title_match` en `true` o `false`.
-    c.  Evalúa la afinidad general (Alta, Media, Baja) basándote en las 
-        habilidades y experiencia.
+### FORMATO DE SALIDA
+- La respuesta DEBE ser una lista de objetos JSON válida.
+- NO incluyas texto, comentarios o explicaciones antes o después de la lista JSON.
 
-2.  **Generación de JSON:** Genera una respuesta JSON que sea una lista de objetos. 
-    Cada objeto debe representar a un candidato y seguir ESTRICTAMENTE la 
-    siguiente estructura:
+### ESTRUCTURA DEL OBJETO JSON
+- `file_name`: (string) Nombre del archivo del CV.
+- `job_title_found`: (string) Puesto de trabajo más relevante encontrado en el CV.
+- `is_job_title_match`: (boolean) `true` si el puesto es relevante, `false` si no.
+- `affinity`: (string) Nivel de afinidad. Debe ser "Alta", "Media" o "Baja".
+- `summary`: (string) Resumen profesional sobre la idoneidad del candidato.
+- `key_requirements_analysis`: (string) Análisis punto por punto de los requisitos clave. Usa
+`\\n` para saltos de línea.
 
-    ```json
-    {{
-      "file_name": "nombre_del_archivo.pdf",
-      "job_title_found": "El puesto de trabajo más relevante que encontraste en el CV",
-      "is_job_title_match": true,
-      "affinity": "Alta | Media | Baja",
-      "summary": "Un resumen conciso de por qué el candidato es o no es una buena opción, justificando la decisión de 'is_job_title_match'.",
-      "key_requirements_analysis": "Análisis de cómo el candidato cumple (o no) con los requisitos clave. Formatea tu respuesta como una lista de puntos usando guiones (-), donde cada punto esté en una nueva línea (usa \n)."
-    }}
-    ```
-
-**REGLAS PARA EL JSON DE SALIDA:**
-- Tu respuesta DEBE ser un único bloque de código JSON válido, comenzando con `[` y terminando con `]`.
-- NO incluyas ningún texto, explicación o markdown antes o después del bloque de código JSON.
-- Si no encuentras ningún candidato relevante en el contexto, devuelve una lista JSON vacía: `[]`.
-- El campo `is_job_title_match` debe ser un booleano (`true` o `false`), sin comillas.
-- Asegúrate de que todas las cadenas de texto dentro del JSON (como el `summary`) 
-  usen comillas dobles y escapa cualquier comilla doble interna con \"
-
-**INICIA TU RESPUESTA JSON AQUÍ:**
+### EJEMPLO DE SALIDA
+```
+[
+{{
+"file_name": "cv_candidato_ejemplo.pdf",
+"job_title_found": "Senior Data Analyst",
+"is_job_title_match": true,
+"affinity": "Alta",
+"summary": "Excelente candidato cuya experiencia en análisis de datos y dominio de SQL y PowerBI se
+alinea con los requisitos.",
+"key_requirements_analysis": "- Más de 5 años de experiencia con SQL.\\n- Experiencia demostrable con
+PowerBI."
+}}
+]
+```
 """
+
+# --- Módulo: Chat con CVs ---
+CHAT_PROMPT_TEMPLATE: Final[str] = """
+### ROL Y OBJETIVO
+Actúas como un asistente de reclutamiento amigable y experto. Tu objetivo es responder la
+pregunta del usuario de forma clara y conversacional, basando tu respuesta únicamente en la
+información de los CVs proporcionada en el contexto.
+
+### CONTEXTO DE CVS
+{context}
+
+### PREGUNTA DEL RECLUTADOR
+{question}
+
+### INSTRUCCIONES DE RESPUESTA
+- **Estilo Conversacional:** Responde en un tono natural y servicial. Imagina que estás hablando
+directamente con un colega del equipo de reclutamiento.
+- **Sintetiza la Información:** Si varios candidatos cumplen con el criterio de la pregunta,
+resume la información de forma conjunta. Por ejemplo: "He encontrado que varios candidatos
+tienen la experiencia que buscas: Juan Pérez (5 años en Python) y Ana García (3 años en
+desarrollo web)."
+- **Cita tus Fuentes:** Al mencionar un dato específico de un candidato, indica siempre el
+nombre del archivo del CV entre corchetes. Ejemplo: "María Rojas tiene una certificación en AWS
+[cv_maria_rojas.pdf]".
+- **Manejo de Información Faltante:** Si la respuesta no se encuentra en el contexto,
+simplemente indica que no encontraste información sobre ese punto en los CVs analizados.
+
+### RESPUESTA DEL ASISTENTE
+"""
+
+# --- Módulo: Análisis Comparativo ---
+COMPARISON_PROMPT_TEMPLATE: Final[str] = """
+### ROL Y OBJETIVO
+Actúas como un analista de talento experto y conciso. Tu misión es crear una tabla comparativa y
+un análisis final de los candidatos proporcionados.
+
+### CONTEXTO (Fragmentos de los CVs seleccionados)
+{context}
+
+### CRITERIO DE COMPARACIÓN SOLICITADO
+{question}
+
+### FORMATO DE RESPUESTA OBLIGATORIO
+Tu respuesta DEBE seguir estrictamente esta estructura Markdown, sin añadir texto introductorio
+ni explicaciones adicionales.
+
+#### 1. Tabla Comparativa
+La tabla debe tener una columna para el "Criterio" y una para cada candidato (usa el nombre del
+archivo como cabecera).
+- **Información Clave:** Sé directo y extrae solo la información relevante para el criterio.
+- **Información Faltante:** Si un candidato no tiene información para un criterio, 
+escribe "No mencionado en el CV". No dejes celdas vacías.
+
+| Criterio              | nombre_candidato_A.pdf  | nombre_candidato_B.pdf  |nombre_candidato_c.pdf  |
+| --------------------- | ----------------------- | ----------------------- |----------------------- |
+| [Criterio 1 extraído] | [Hallazgo para A]       | No mencionado en el CV  |No mencionado en el CV  |
+| [Criterio 2 extraído] | No mencionado en el CV  | [Hallazgo para B]       |No mencionado en el CV  |
+
+#### 2. Análisis y Recomendación
+**Análisis:**
+En no más de 3 frases, resume las fortalezas y debilidades clave de los candidatos basándote en
+la tabla. Si el CV de un candidato no contiene información relevante para ninguno de los
+criterios, señálalo directamente.
+
+**Recomendación:**
+En una sola frase, indica cuál es el candidato más recomendable para el criterio solicitado y
+por qué. Si ningún candidato es recomendable, indícalo también.
+"""
+
+# ==============================================================================
+# SECCIÓN 5: BASE DE DATOS VECTORIAL
+# ==============================================================================
+# El nombre del directorio se genera automáticamente a partir del modelo de
+# embeddings para evitar conflictos si se cambia de modelo.
+DB_DIRECTORY: Final[Path] = BASE_DIR / f"{DB_DIRECTORY_BASE_NAME}_{EMBEDDING_MODEL_NAME.replace('/', '_')}"
+
+# Nombre de la "tabla" interna en la base de datos.
+CHROMA_COLLECTION_NAME: Final[str] = "cv_collection"

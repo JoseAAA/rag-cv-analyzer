@@ -17,7 +17,7 @@ from langchain_core.vectorstores import VectorStoreRetriever
 
 from src.vector_store import get_db_stats
 from src.rag_pipeline import load_llm_and_retriever, format_docs
-from src.config import PROMPT_TEMPLATE, TOP_K_CANDIDATES
+from src.config import RANKING_PROMPT_TEMPLATE, TOP_K_CANDIDATES
 
 st.set_page_config(
     page_title="Ranking de Candidatos",
@@ -44,7 +44,7 @@ def get_rag_chain(
     retriever: VectorStoreRetriever, llm: ChatGoogleGenerativeAI
 ) -> Runnable:
     """Crea y devuelve la cadena de RAG (LangChain) completa."""
-    prompt = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+    prompt = ChatPromptTemplate.from_template(RANKING_PROMPT_TEMPLATE)
     parser = JsonOutputParser()
     # Se usa () para romper la línea de la cadena de forma legible
     return (
@@ -59,7 +59,7 @@ def get_rag_chain(
 
 def process_and_display_results(query: str, response: List[Dict[str, Any]]) -> None:
     """Procesa la respuesta del LLM, la ordena y la muestra en la UI."""
-    st.markdown("#### 📝 Consulta del Reclutador:")
+    st.markdown("#### 📝 Resumen de tu Búsqueda:")
     st.info(query)
     st.markdown("---")
 
@@ -104,8 +104,8 @@ def render_sidebar() -> Dict[str, Any]:
         st.header("📊 Estadísticas de la Base de Datos")
         db_stats = get_db_stats()
         col1, col2 = st.columns(2)
-        col1.metric("CVs Indexados", db_stats["cv_count"])
-        col2.metric("Fragmentos", db_stats["chunk_count"])
+        col1.metric("CVs Procesados", db_stats["cv_count"])
+        # col2.metric("Segmentos de Análisis", db_stats["chunk_count"])
 
         if db_stats["cv_names"]:
             with st.expander("Ver CVs Analizados"):
@@ -157,7 +157,7 @@ def render_main_content(
         query = build_query(**{k: v for k, v in filters.items() if k != 'analyze'})
         rag_chain = get_rag_chain(retriever, llm)
         
-        with st.spinner(f"Analizando candidatos para '{filters['job_title']}'..."):
+        with st.spinner(f"Analizando candidatos para '{filters['job_title']}'..." ):
             try:
                 response = rag_chain.invoke({"question": query})
                 process_and_display_results(query, response)

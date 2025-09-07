@@ -17,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📂 Gestión de la Base de Conocimiento: CVs")
+st.title("📂 Carga y Gestión de CVs")
 st.markdown("Carga, procesa y administra los CVs de los candidatos.")
 st.markdown("---")
 
@@ -45,18 +45,17 @@ with col_upload:
         else:
             st.warning("Por favor, selecciona al menos un archivo PDF para procesar.")
 
-    st.markdown("---" )
+    st.markdown("--- ")
     st.header("Mantenimiento de la Base de Datos")
-    
-    delete_button = st.button(
-        "🚨 Eliminar Toda la Base de Datos", 
-        use_container_width=True
-    )
-    if delete_button:
-        confirm_delete = st.checkbox(
-            "Sí, estoy seguro de que quiero eliminar TODOS los CVs procesados."
+
+    with st.expander("⚠️ Opciones de Mantenimiento Avanzadas"):
+        st.warning(
+            "Esta acción es irreversible y reiniciará la base de datos, "
+            "eliminando todos los CVs procesados.", 
+            icon="🚨"
         )
-        if confirm_delete:
+        
+        if st.button("Reiniciar Base de Datos Permanentemente", use_container_width=True):
             eliminar_toda_la_base_de_datos()
             st.rerun()
 
@@ -66,8 +65,8 @@ with col_status:
     with st.container(border=True):
         db_stats = get_db_stats()
         
-        st.metric("Total de CVs Indexados", db_stats["cv_count"])
-        st.metric("Total de Fragmentos (Chunks)", db_stats["chunk_count"])
+        st.metric("Total de CVs Procesados", db_stats["cv_count"])
+        # st.metric("Segmentos de Información Analizados", db_stats["chunk_count"])
         
         if db_stats["cv_names"]:
             with st.expander("**Ver Nombres de los CVs Analizados**"):

@@ -15,26 +15,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.vectorstores import VectorStoreRetriever
 
 from src.rag_pipeline import load_llm_and_retriever, format_docs
-
-# --- Constantes y Plantillas Específicas del Módulo ---
-
-CHAT_PROMPT_TEMPLATE = """
-Actúas como un asistente de reclutamiento inteligente. Tu tarea es responder a la pregunta del usuario basándote únicamente en el contexto proporcionado, que contiene fragmentos de varios CVs.
-
-**Contexto de CVs Proporcionado:**
-{context}
-
-**Pregunta del Usuario:**
-{question}
-
-**Instrucciones para tu Respuesta:**
-1.  Sintetiza la información de todos los fragmentos relevantes para formular una respuesta coherente y completa.
-2.  Si la información se encuentra en varios CVs, puedes mencionarlo. Por ejemplo: "Tanto el candidato A como el candidato B tienen experiencia en..."
-3.  Si no encuentras información relevante en el contexto para responder a la pregunta, indica claramente: "No he encontrado información sobre este tema en los CVs analizados."
-4.  Responde de forma directa y concisa.
-
-**Respuesta:**
-"""
+from src.config import CHAT_PROMPT_TEMPLATE
 
 st.set_page_config(
     page_title="Chat con CVs",

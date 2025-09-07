@@ -3,6 +3,7 @@ Módulo para la gestión de la base de datos vectorial (ChromaDB).
 
 Este módulo encapsula toda la interacción con la base de datos, incluyendo
 la carga, el procesamiento y la eliminación de documentos.
+Implementa un patrón de cliente único para evitar conflictos de conexión.
 """
 import os
 import ntpath
@@ -10,19 +11,34 @@ from typing import List, Dict, Any, Set, IO
 
 import streamlit as st
 import chromadb
+from chromadb.config import Settings
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from unstructured.partition.pdf import partition_pdf
 from unstructured.chunking.title import chunk_by_title
 
 from .config import (
-    CV_DIRECTORY,
     DB_DIRECTORY,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
-    CHROMA_COLLECTION_NAME
+    CHROMA_COLLECTION_NAME,
+    PDF_PROCESSING_STRATEGY,
+    PDF_PROCESSING_LANGUAGES
 )
-from .rag_pipeline import load_embedding_model
+from .models import load_embedding_model
+
+# --- Conexión Única y Centralizada a ChromaDB ---
+
+@st.cache_resource
+def get_chroma_client() -> chromadb.Client:
+    """
+    Crea y cachea una instancia única del cliente de ChromaDB.
+    Esta es la única función que debe crear un PersistentClient.
+    """
+    return chromadb.PersistentClient(
+        path=str(DB_DIRECTORY),
+        settings=Settings(allow_reset=True)
+    )
 
 # --- Funciones Públicas de Alto Nivel ---
 
@@ -44,23 +60,23 @@ def procesar_archivos_cargados(archivos_cargados: List[st.runtime.uploaded_file_
         _clear_streamlit_caches()
 
 def eliminar_toda_la_base_de_datos() -> None:
-    """Elimina por completo la colección de ChromaDB."""
-    with st.spinner("Eliminando la base de datos vectorial..."):
+    """
+    Reinicia por completo la base de datos vectorial usando el cliente centralizado.
+    """
+    with st.spinner("Reiniciando la base de datos vectorial..."):
         try:
-            client = chromadb.PersistentClient(path=str(DB_DIRECTORY))
-            # Usamos delete_collection para una eliminación completa y limpia.
-            client.delete_collection(name=CHROMA_COLLECTION_NAME)
+            client = get_chroma_client()
+            client.reset()
             _clear_streamlit_caches()
-            st.success("✅ Base de datos eliminada con éxito.")
+            st.success("✅ Base de datos reiniciada con éxito.")
         except Exception as e:
-            # ChromaDB puede lanzar una excepción si la colección no existe.
-            st.warning(f"La base de datos ya estaba vacía o no se pudo eliminar: {e}")
+            st.error(f"Ocurrió un error al reiniciar la base de datos: {e}")
 
 @st.cache_data(ttl=30)
 def get_db_stats() -> Dict[str, Any]:
     """Consulta la DB para obtener estadísticas sobre los datos indexados."""
     try:
-        client = chromadb.PersistentClient(path=str(DB_DIRECTORY))
+        client = get_chroma_client()
         collection = client.get_collection(name=CHROMA_COLLECTION_NAME)
         
         if collection.count() == 0:
@@ -79,7 +95,6 @@ def get_db_stats() -> Dict[str, Any]:
             "cv_names": sorted(list(unique_sources))
         }
     except Exception:
-        # Si la colección no existe, get_collection lanza una excepción.
         return {"cv_count": 0, "chunk_count": 0, "cv_names": []}
 
 # --- Funciones Privadas de Lógica Interna ---
@@ -97,8 +112,8 @@ def _chunk_archivos(archivos: List[IO]) -> List[Document]:
         try:
             elements = partition_pdf(
                 file=archivo,  # partition_pdf puede manejar objetos de archivo en memoria
-                strategy="fast",
-                languages=["eng", "spa"],
+                strategy=PDF_PROCESSING_STRATEGY,
+                languages=PDF_PROCESSING_LANGUAGES,
                 infer_table_structure=True,
             )
             
@@ -122,10 +137,12 @@ def _chunk_archivos(archivos: List[IO]) -> List[Document]:
     return all_chunks
 
 def _add_chunks_to_db(chunks: List[Document]) -> None:
-    """Crea los embeddings y añade los documentos a ChromaDB."""
+    """Crea los embeddings y añade los documentos a ChromaDB usando el cliente centralizado."""
     embeddings = load_embedding_model()
+    client = get_chroma_client()
+    
     vector_store = Chroma(
-        persist_directory=str(DB_DIRECTORY),
+        client=client,
         collection_name=CHROMA_COLLECTION_NAME,
         embedding_function=embeddings,
     )
@@ -135,24 +152,3 @@ def _clear_streamlit_caches() -> None:
     """Limpia las cachés de Streamlit para forzar la recarga de recursos y datos."""
     st.cache_resource.clear()
     st.cache_data.clear()
-
-# --- Función Legada (No usada por la nueva UI) ---
-
-def sincronizar_vector_db() -> None:
-    """[LEGADO] Vacía y reconstruye la DB desde los CVs en el directorio local."""
-    eliminar_toda_la_base_de_datos()
-    pdf_files: List[str] = [f for f in os.listdir(CV_DIRECTORY) if f.endswith('.pdf')]
-    if not pdf_files:
-        st.warning("No se encontraron archivos PDF en la carpeta de datos.")
-        return
-
-    archivos_con_ruta = [os.path.join(CV_DIRECTORY, fname) for fname in pdf_files]
-    all_chunks = _chunk_archivos(archivos_con_ruta)
-    
-    if all_chunks:
-        _add_chunks_to_db(all_chunks)
-        st.success(f"✅ Base de datos vectorial sincronizada desde disco. {len(pdf_files)} CVs procesados.")
-    else:
-        st.warning("No se pudo extraer contenido de los CVs locales.")
-    
-    _clear_streamlit_caches()
